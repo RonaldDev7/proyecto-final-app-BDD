@@ -12,14 +12,14 @@ import Perfil          from './paginas/Perfil'
 // 1. Importamos la nueva vista de reservas
 import Reservas        from './paginas/Reservas'
 
-// Desactivamos el bloqueo: Ahora siempre deja pasar
-function RutaPrivada({ children }) {
-  return children 
+function PrivateRoute({ children }) {
+  const { user } = useAuth()
+  return user ? children : <Navigate to="/login" replace />
 }
 
-// Desactivamos el bloqueo: Ahora no te regresa si estás en login/registro
-function RutaPublica({ children }) {
-  return children
+function PublicRoute({ children }) {
+  const { user } = useAuth()
+  return !user ? children : <Navigate to="/" replace />
 }
 
 export default function App() {

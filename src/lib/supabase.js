@@ -4,3 +4,4 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? 'https://placeholder.s
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'placeholder-key'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+//esto es temporal paar que me dejara ver las interfaces sin que me diera error de cors
