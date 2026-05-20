@@ -1,0 +1,226 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexto/AuthContexto'
+import { useCarrito } from '../contexto/CarritoContexto'
+import NavInferior from '../componentes/NavInferior'
+
+const ENVIO = 5900
+const META_ENVIO_GRATIS = 50000
+
+export default function Carrito() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+
+  // ✅ Ahora usa el contexto global en vez de estado local duplicado
+  const {
+    itemsCarrito: items,
+    actualizarCantidad,
+    eliminarDelCarrito,
+    vaciarCarrito,
+    cargarCarrito,
+  } = useCarrito()
+
+  const [sugeridos, setSugeridos] = useState([])
+  const [finalizando, setFinalizando] = useState(false)
+
+  useEffect(() => {
+    cargarSugeridos()
+  }, [])
+
+  const cargarSugeridos = async () => {
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .eq('available', true)
+      .limit(5)
+    if (data) setSugeridos(data)
+  }
+
+  const subtotal = items.reduce(
+    (acc, i) => acc + Number(i.products?.price ?? 0) * i.quantity, 0
+  )
+  const faltaParaGratis = Math.max(0, META_ENVIO_GRATIS - subtotal)
+  const envio = subtotal >= META_ENVIO_GRATIS ? 0 : ENVIO
+  const total = subtotal + envio
+  const totalItems = items.reduce((acc, i) => acc + i.quantity, 0)
+
+  const finalizarPedido = async () => {
+    if (!user) { alert('Debes iniciar sesión'); return }
+    if (items.length === 0) return
+
+    setFinalizando(true)
+
+    try {
+      const { data: orden, error: errorOrden } = await supabase
+        .from('orders')
+        .insert({ user_id: user.id, status: 'pending', total })
+        .select()
+        .single()
+
+      if (errorOrden) { alert(errorOrden.message); return }
+
+      const itemsPedido = items.map((item) => ({
+        order_id: orden.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: item.products.price,
+      }))
+
+      const { error: errorItems } = await supabase
+        .from('order_items')
+        .insert(itemsPedido)
+
+      if (errorItems) { alert(errorItems.message); return }
+
+      // ✅ Vacía en Supabase y actualiza el contexto global
+      await vaciarCarrito()
+      navigate('/pedidos')
+
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setFinalizando(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen pb-28" style={{ backgroundColor: '#FAF6F1' }}>
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-6 pb-4 bg-white shadow-sm">
+        <button onClick={() => navigate(-1)}>
+          <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#8B1A1A" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <h1 className="text-lg font-extrabold" style={{ color: '#2C1810' }}>Mi Carrito</h1>
+        <button onClick={vaciarCarrito}>
+          <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#8B1A1A" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6M14 11v6" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          </svg>
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 px-8">
+          <div className="text-6xl mb-4">🛒</div>
+          <p className="text-lg font-bold mb-2" style={{ color: '#2C1810' }}>Tu carrito está vacío</p>
+          <p className="text-sm text-center mb-6" style={{ color: '#9CA3AF' }}>
+            Agrega productos del menú para comenzar tu pedido
+          </p>
+          <button
+            onClick={() => navigate('/menu')}
+            className="px-6 py-3 rounded-xl text-white font-bold"
+            style={{ backgroundColor: '#8B1A1A' }}
+          >
+            Ver menú
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Barra envío gratis */}
+          <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-md border border-gray-100/50">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">🛵</span>
+              <p className="text-xs font-semibold" style={{ color: '#2C1810' }}>
+                {faltaParaGratis > 0
+                  ? `Falta $${faltaParaGratis.toLocaleString('es-CO')} para envío gratis`
+                  : '¡Tienes envío gratis!'}
+              </p>
+              <span className="ml-auto text-xs font-bold" style={{ color: '#9CA3AF' }}>
+                ${META_ENVIO_GRATIS.toLocaleString('es-CO')}
+              </span>
+            </div>
+            <div className="w-full rounded-full h-1.5" style={{ backgroundColor: '#F0EAE4' }}>
+              <div
+                className="h-1.5 rounded-full transition-all"
+                style={{
+                  backgroundColor: '#8B1A1A',
+                  width: `${Math.min(100, (subtotal / META_ENVIO_GRATIS) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Items */}
+          <div className="mx-4 mt-4 flex flex-col gap-3.5">
+            {items.map((item) => (
+              <div key={item.id} className="flex gap-4 bg-white rounded-2xl p-3.5 shadow-md border border-gray-100/60 transition-all hover:shadow-lg">
+                <img
+                  src={item.products?.image_url}
+                  alt={item.products?.name}
+                  className="w-20 h-20 rounded-xl object-cover flex-shrink-0 bg-gray-50"
+                />
+                <div className="flex-1 min-w-0 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between">
+                      <p className="text-sm font-bold text-gray-800 truncate pr-2">
+                        {item.products?.name}
+                      </p>
+                      {/* ✅ Llama al contexto, elimina en Supabase */}
+                      <button onClick={() => eliminarDelCarrito(item.id)}>
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#9CA3AF" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.products?.description}</p>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-sm font-black text-[#8B1A1A]">
+                      ${(Number(item.products?.price ?? 0) * item.quantity).toLocaleString('es-CO')}
+                    </span>
+                    <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-2.5 py-1 border border-gray-200/50">
+                      {/* ✅ Actualiza cantidad en Supabase */}
+                      <button
+                        onClick={() => actualizarCantidad(item.id, item.quantity - 1)}
+                        className="text-gray-500 font-bold text-sm px-1"
+                      >-</button>
+                      <span className="text-xs font-bold text-gray-800">{item.quantity}</span>
+                      <button
+                        onClick={() => actualizarCantidad(item.id, item.quantity + 1)}
+                        className="text-gray-500 font-bold text-sm px-1"
+                      >+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Resumen */}
+          <div className="mx-4 mt-5 bg-white rounded-2xl p-4 shadow-md border border-gray-100/50 flex flex-col gap-2.5">
+            <div className="flex justify-between text-xs font-medium text-gray-500">
+              <span>Subtotal ({totalItems} productos)</span>
+              <span>${subtotal.toLocaleString('es-CO')}</span>
+            </div>
+            <div className="flex justify-between text-xs font-medium text-gray-500">
+              <span>Costo de envío</span>
+              <span>{envio === 0 ? 'Gratis' : `$${envio.toLocaleString('es-CO')}`}</span>
+            </div>
+            <div className="h-px bg-gray-100 my-1" />
+            <div className="flex justify-between text-sm font-black text-gray-800">
+              <span>Total a pagar</span>
+              <span className="text-[#8B1A1A]">${total.toLocaleString('es-CO')}</span>
+            </div>
+            <button
+              onClick={finalizarPedido}
+              disabled={finalizando}
+              className="w-full py-3.5 bg-[#8B1A1A] hover:bg-[#6E1414] text-white font-bold text-sm rounded-xl mt-2 transition-colors shadow-sm"
+            >
+              {finalizando ? 'Procesando...' : 'Confirmar Pedido'}
+            </button>
+          </div>
+        </>
+      )}
+
+      <NavInferior />
+    </div>
+  )
+}
