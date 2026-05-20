@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexto/AuthContexto'
 import NavInferior from '../componentes/NavInferior'
+import { useCarrito } from '../contexto/CarritoContexto'
 
 const categorias = [
   { id: 1, nombre: 'Platos Fuertes', emoji: '🍔' },
@@ -12,64 +13,38 @@ const categorias = [
 ]
 
 export default function Inicio() {
-  const { usuario } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   
   // Lista local enlazada con tus archivos reales de la carpeta public
-  const [productos, setProductos] = useState([
-    { 
-      id: 1, 
-      name: "Hamburguesa Especial", 
-      price: 25000, 
-      description: "Carne artesanal de la casa con queso fundido.", 
-      image_url: "/HamburguesaEspecial.png" 
-    },
-    { 
-      id: 2, 
-      name: "Pizza Pepperoni", 
-      price: 30000, 
-      description: "Abundante mozzarella y pepperoni premium.", 
-      image_url: "/Pizza Pepperoni madurada.webp" 
-    }
-  ])
+  const [productos, setProductos] = useState([])
   
-  const [cargando, setCargando] = useState(false)
+  const { agregarAlCarrito } = useCarrito()
+
+  const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
-    const cargarProductos = async () => {
-      const { data } = await supabase
-        .from('products')
-        .select('*')
-        .eq('available', true)
-        .limit(6)
-      if (data && data.length > 0) {
-        setProductos(data)
-      }
-      setCargando(false)
-    }
-    cargarProductos()
-  }, [])
+  const cargarProductos = async () => {
+    // setCargando ya está en true desde el useState inicial
 
-  const agregarAlCarrito = async (productoId) => {
-    if (!usuario) return
-    const { data: existe } = await supabase
-      .from('cart_items')
-      .select('*')
-      .eq('user_id', usuario.id)
-      .eq('product_id', productoId)
-      .single()
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, name, price, description, image_url')
+      .eq('available', true)
+      .order('name')
+      .limit(6)
 
-    if (existe) {
-      await supabase
-        .from('cart_items')
-        .update({ quantity: existe.quantity + 1 })
-        .eq('id', existe.id)
+    if (error) {
+      console.error('Error cargando productos:', error)
     } else {
-      await supabase
-        .from('cart_items')
-        .insert({ user_id: usuario.id, product_id: productoId, quantity: 1 })
+      setProductos(data ?? [])
     }
+
+    setCargando(false)
   }
+
+  cargarProductos()
+}, [])
 
   return (
     <div className="min-h-screen pb-24" style={{ backgroundColor: '#FAF6F1' }}>

@@ -6,12 +6,12 @@ import NavInferior from '../componentes/NavInferior'
 
 export default function Perfil() {
   const navigate = useNavigate()
-  const { usuario, cerrarSesion } = useAuth()
+  const { user, signOut } = useAuth()
   
   // 1. Inyectamos datos de perfil de prueba para saltar la consulta a la base de datos
   const [perfil, setPerfil] = useState({
     full_name: "Carlos Mendoza",
-    email: usuario?.email ?? "carlos.mendoza@email.com",
+    email: user?.email ?? "carlos.mendoza@email.com",
     phone: "+57 300 123 4567"
   })
   
@@ -24,7 +24,7 @@ export default function Perfil() {
       const { data } = await supabase
         .from('users')
         .select('*')
-        .eq('id', usuario?.id)
+        .eq('id', user?.id)
         .single()
       if (data) {
         setPerfil(data)
@@ -36,7 +36,7 @@ export default function Perfil() {
 
   const manejarCerrarSesion = async () => {
     setCerrando(true)
-    if (cerrarSesion) await cerrarSesion()
+    if (signOut) await signOut()
     navigate('/login')
   }
 
@@ -102,7 +102,7 @@ export default function Perfil() {
         {/* Info */}
         <div className="flex-1 min-w-0">
           <p className="text-base font-extrabold truncate" style={{ color: '#2C1810' }}>
-            {perfil?.full_name ?? 'Usuario'}
+            {perfil?.full_name ?? 'User'}
           </p>
           <p className="text-xs truncate mt-0.5" style={{ color: '#9CA3AF' }}>
             {perfil?.email}

@@ -1,105 +1,104 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexto/AuthContexto'
 import NavInferior from '../componentes/NavInferior'
+import { useCarrito } from '../contexto/CarritoContexto'
 
+// Categorías definidas localmente con sus IDs reales de Supabase
+// Ajusta los IDs si en tu tabla categories son diferentes
 const CATEGORIAS = [
-  { id: null, nombre: 'Todos', emoji: '⊞' },
-  { id: 1, nombre: 'Platos Fuertes', emoji: '🍔' },
-  { id: 2, nombre: 'Entradas',       emoji: '🍟' },
-  { id: 3, nombre: 'Bebidas',        emoji: '🥤' },
-  { id: 4, nombre: 'Postres',        emoji: '🍰' },
+  { id: null,  nombre: 'Todos',         emoji: '⊞' },
+  { id: 1,     nombre: 'Platos Fuertes', emoji: '🍔' },
+  { id: 2,     nombre: 'Entradas',       emoji: '🍟' },
+  { id: 3,     nombre: 'Bebidas',        emoji: '🥤' },
+  { id: 4,     nombre: 'Postres',        emoji: '🍰' },
 ]
 
 export default function Menu() {
-  const navigate = useNavigate()
-  const { usuario } = useAuth()
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
-  const [busqueda, setBusqueda] = useState('')
-  const [categoriaActiva, setCategoriaActiva] = useState(
-    searchParams.get('categoria') ? Number(searchParams.get('categoria')) : null
-  )
-  
-  // 1. Cargamos platos de prueba directamente para que puedas diseñar sin errores de CORS
-  const [productosPorCategoria, setProductosPorCategoria] = useState({
-    "Platos Fuertes": [
-      { id: 1, name: "Hamburguesa Especial", price: 25000, description: "Carne artesanal de la casa, queso cheddar, vegetales frescos y salsas.", image_url: "HamburguesaEspecial.png" },
-      { id: 2, name: "Pizza Pepperoni madurada", price: 30000, description: "Masa delgada y crujiente, salsa napolitana, mozzarella y pepperoni.", image_url: "Pizza Pepperoni madurada.webp" }
-    ],
-    "Entradas": [
-      { id: 3, name: "Papas Fritas Crujientes", price: 12000, description: "Porción de papas seleccionadas con sal marina y salsa de ajo.", image_url: "papas.webp" }
-    ],
-    "Bebidas": [
-      { id: 4, name: "Limonada Natural Cerezada", price: 8000, description: "Refrescante jugo de limón natural endulzado con cerezas frescas.", image_url: "LimonadaCerezada.png" }
-    ]
-  })
-  
-  // Ponemos cargando en false por defecto para maquetar de inmediato
-  const [cargando, setCargando] = useState(false)
 
+  // ✅ Parseamos el param una sola vez con Number(), null si no existe
+  const categoriaInicial = searchParams.get('categoria')
+    ? Number(searchParams.get('categoria'))
+    : null
+
+  const [busqueda, setBusqueda] = useState('')
+  const [categoriaActiva, setCategoriaActiva] = useState(categoriaInicial)
+
+  // ✅ Array plano de productos — sin agrupar, sin fake data
+  const [productos, setProductos] = useState([])
+  const [cargando, setCargando] = useState(true)
+
+  const { cantidadCarrito, agregarAlCarrito } = useCarrito()
+
+  // ─── Carga real desde Supabase ───────────────────────────────────────────────
   useEffect(() => {
     const cargar = async () => {
-      // Dejamos la petición lista. Al conectar la base de datos real, esto sobreescribirá los datos falsos automáticamente.
-      const { data } = await supabase
+      setCargando(true)
+
+      const { data, error } = await supabase
         .from('products')
-        .select('*, categories(name)')
+        .select(`
+          id,
+          name,
+          description,
+          price,
+          image_url,
+          category_id,
+          categories ( id, name )
+        `)
         .eq('available', true)
-      if (data && data.length > 0) {
-        const agrupado = {}
-        data.forEach((p) => {
-          const cat = p.categories?.name ?? 'Otros'
-          if (!agrupado[cat]) agrupado[cat] = []
-          agrupado[cat].push(p)
-        })
-        setProductosPorCategoria(agrupado)
+        .order('name')
+
+      if (error) {
+        console.error('Error cargando productos:', error)
+      } else {
+        setProductos(data ?? [])
       }
+
       setCargando(false)
     }
+
     cargar()
   }, [])
 
-  const agregarAlCarrito = async (productoId) => {
-    if (!usuario) return
-    const { data: existe } = await supabase
-      .from('cart_items')
-      .select('*')
-      .eq('user_id', usuario.id)
-      .eq('product_id', productoId)
-      .single()
+  // ─── Filtrado reactivo con useMemo (no recalcula si nada cambió) ─────────────
+  const productosFiltrados = useMemo(() => {
+    let resultado = productos
 
-    if (existe) {
-      await supabase
-        .from('cart_items')
-        .update({ quantity: existe.quantity + 1 })
-        .eq('id', existe.id)
-    } else {
-      await supabase
-        .from('cart_items')
-        .insert({ user_id: usuario.id, product_id: productoId, quantity: 1 })
-    }
-  }
-
-  const filtrarProductos = (productos) => {
-    if (!busqueda) return productos
-    return productos.filter((p) =>
-      p.name.toLowerCase().includes(busqueda.toLowerCase())
-    )
-  }
-
-  const categoriasFiltradas = () => {
+    // Filtro por categoría usando category_id numérico
     if (categoriaActiva !== null) {
-      const nombre = CATEGORIAS.find((c) => c.id === categoriaActiva)?.nombre
-      const prods = productosPorCategoria[nombre] ?? []
-      return { [nombre]: filtrarProductos(prods) }
+      resultado = resultado.filter((p) => p.category_id === categoriaActiva)
     }
-    const resultado = {}
-    Object.entries(productosPorCategoria).forEach(([cat, prods]) => {
-      const filtrados = filtrarProductos(prods)
-      if (filtrados.length > 0) resultado[cat] = filtrados
-    })
+
+    // Filtro por búsqueda (nombre o descripción)
+    if (busqueda.trim()) {
+      const termino = busqueda.toLowerCase()
+      resultado = resultado.filter(
+        (p) =>
+          p.name.toLowerCase().includes(termino) ||
+          p.description?.toLowerCase().includes(termino)
+      )
+    }
+
     return resultado
-  }
+  }, [productos, categoriaActiva, busqueda])
+
+  // ─── Agrupamos por nombre de categoría solo para el render ──────────────────
+  const productosAgrupados = useMemo(() => {
+    const grupos = {}
+
+    productosFiltrados.forEach((p) => {
+      // Usamos el nombre real que viene del join, con fallback
+      const nombreCat = p.categories?.name ?? 'Otros'
+      if (!grupos[nombreCat]) grupos[nombreCat] = []
+      grupos[nombreCat].push(p)
+    })
+
+    return grupos
+  }, [productosFiltrados])
 
   return (
     <div className="min-h-screen pb-24" style={{ backgroundColor: '#FAF6F1' }}>
@@ -120,16 +119,24 @@ export default function Menu() {
             <line x1="3" y1="6" x2="21" y2="6" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M16 10a4 4 0 0 1-8 0" />
           </svg>
-          <span className="absolute -top-2 -right-2 w-4 h-4 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
-            style={{ backgroundColor: '#8B1A1A' }}>5</span>
+          {cantidadCarrito > 0 && (
+            <span
+              className="absolute -top-2 -right-2 w-4 h-4 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
+              style={{ backgroundColor: '#8B1A1A' }}
+            >
+              {cantidadCarrito}
+            </span>
+          )}
         </Link>
       </div>
 
       {/* Buscador */}
       <div className="px-4 pt-3 pb-2">
         <div className="flex gap-2">
-          <div className="flex-1 flex items-center gap-2 bg-white border rounded-xl px-3 py-2.5"
-            style={{ borderColor: '#E0D6CE' }}>
+          <div
+            className="flex-1 flex items-center gap-2 bg-white border rounded-xl px-3 py-2.5"
+            style={{ borderColor: '#E0D6CE' }}
+          >
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#9CA3AF" strokeWidth="2">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -142,9 +149,19 @@ export default function Menu() {
               className="flex-1 bg-transparent outline-none text-sm"
               style={{ color: '#2C1810' }}
             />
+            {/* ✅ Botón limpiar búsqueda */}
+            {busqueda && (
+              <button onClick={() => setBusqueda('')}>
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#9CA3AF" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
-          <button className="flex items-center gap-1 px-3 py-2.5 bg-white border rounded-xl text-xs font-semibold"
-            style={{ borderColor: '#E0D6CE', color: '#2C1810' }}>
+          <button
+            className="flex items-center gap-1 px-3 py-2.5 bg-white border rounded-xl text-xs font-semibold"
+            style={{ borderColor: '#E0D6CE', color: '#2C1810' }}
+          >
             <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
               <line x1="4" y1="6" x2="20" y2="6" />
               <line x1="8" y1="12" x2="16" y2="12" />
@@ -178,22 +195,29 @@ export default function Menu() {
       </div>
 
       {/* Banner */}
-      <div className="mx-4 my-3 rounded-2xl overflow-hidden relative" style={{ backgroundColor: '#8B1A1A', minHeight: 110 }}>
+      <div
+        className="mx-4 my-3 rounded-2xl overflow-hidden relative"
+        style={{ backgroundColor: '#8B1A1A', minHeight: 110 }}
+      >
         <div className="p-4 pr-28">
           <p className="text-white font-extrabold text-base leading-tight">
             <span style={{ color: '#F5A623' }}>20% OFF</span> en tu<br />primer pedido
           </p>
           <p className="text-white text-xs opacity-80 mb-2">¡Aprovecha ahora!</p>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold"
-            style={{ backgroundColor: '#F5A623', color: '#2C1810' }}>
+          <button
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold"
+            style={{ backgroundColor: '#F5A623', color: '#2C1810' }}
+          >
             Pedir ahora
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </button>
         </div>
-        <div className="absolute top-3 right-3 w-12 h-12 rounded-full flex flex-col items-center justify-center"
-          style={{ backgroundColor: '#F5A623' }}>
+        <div
+          className="absolute top-3 right-3 w-12 h-12 rounded-full flex flex-col items-center justify-center"
+          style={{ backgroundColor: '#F5A623' }}
+        >
           <span className="text-xs font-black" style={{ color: '#2C1810' }}>20%</span>
           <span className="text-[9px] font-bold" style={{ color: '#2C1810' }}>OFF</span>
         </div>
@@ -205,48 +229,60 @@ export default function Menu() {
         />
       </div>
 
-      {/* 2. RENDERIZADO DE LAS TARJETAS CON EFECTO DE SOMBRA CASILLA */}
+      {/* Lista de productos */}
       <div className="px-4 flex flex-col gap-6 mt-4">
         {cargando ? (
           <div className="flex justify-center py-10">
-            <div className="w-8 h-8 rounded-full border-2 animate-spin"
-              style={{ borderColor: '#8B1A1A', borderTopColor: 'transparent' }} />
+            <div
+              className="w-8 h-8 rounded-full border-2 animate-spin"
+              style={{ borderColor: '#8B1A1A', borderTopColor: 'transparent' }}
+            />
           </div>
-        ) : Object.keys(categoriasFiltradas()).length === 0 ? (
+        ) : Object.keys(productosAgrupados).length === 0 ? (
           <div className="text-center py-10">
-            <p className="text-sm text-gray-400">No se encontraron productos</p>
+            <div className="text-4xl mb-3">🔍</div>
+            <p className="text-sm text-gray-400">
+              {busqueda
+                ? `Sin resultados para "${busqueda}"`
+                : 'No hay productos en esta categoría'}
+            </p>
+            {busqueda && (
+              <button
+                onClick={() => setBusqueda('')}
+                className="mt-3 text-xs font-bold"
+                style={{ color: '#8B1A1A' }}
+              >
+                Limpiar búsqueda
+              </button>
+            )}
           </div>
         ) : (
-          Object.entries(categoriasFiltradas()).map(([categoria, productos]) => (
+          Object.entries(productosAgrupados).map(([categoria, platosDelGrupo]) => (
             <div key={categoria} className="flex flex-col gap-3">
-              {/* Título de la sección de comida */}
               <h2 className="text-base font-extrabold text-gray-800 px-1">{categoria}</h2>
-              
-              {/* Contenedor de las casillas en lista */}
               <div className="flex flex-col gap-3.5">
-                {productos.map((plato) => (
-                  <div 
-                    key={plato.id} 
+                {platosDelGrupo.map((plato) => (
+                  <div
+                    key={plato.id}
                     className="bg-white p-3.5 rounded-2xl shadow-md border border-gray-100 flex gap-4 transition-all active:scale-[0.99] hover:shadow-lg"
                   >
-                    {/* Imagen del plato */}
-                    <img 
-                      src={plato.image_url} 
-                      alt={plato.name} 
-                      className="w-20 h-20 object-cover rounded-xl flex-shrink-0 bg-gray-100" 
+                    <img
+                      src={plato.image_url}
+                      alt={plato.name}
+                      className="w-20 h-20 object-cover rounded-xl flex-shrink-0 bg-gray-100"
                     />
-
-                    {/* Contenido de texto y precio */}
                     <div className="flex-1 flex flex-col justify-between py-0.5">
                       <div>
                         <h3 className="font-bold text-gray-800 text-sm leading-tight">{plato.name}</h3>
-                        <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">{plato.description}</p>
+                        <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                          {plato.description}
+                        </p>
                       </div>
                       <div className="flex justify-between items-center mt-2">
                         <span className="font-black text-sm text-[#8B1A1A]">
-                          ${plato.price.toLocaleString('es-CO')}
+                          ${Number(plato.price).toLocaleString('es-CO')}
                         </span>
-                        <button 
+                        <button
                           onClick={() => agregarAlCarrito(plato.id)}
                           className="bg-[#8B1A1A] hover:bg-[#6E1414] text-white text-[11px] px-3.5 py-1.5 rounded-xl font-bold transition-colors shadow-sm"
                         >
@@ -262,7 +298,6 @@ export default function Menu() {
         )}
       </div>
 
-      {/* Barra inferior */}
       <NavInferior />
     </div>
   )

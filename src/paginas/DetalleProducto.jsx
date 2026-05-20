@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexto/AuthContexto'
+import { useCarrito } from '../contexto/CarritoContexto'
 
 export default function DetalleProducto() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { usuario } = useAuth()
+  const { user } = useAuth()
 
   const [producto, setProducto] = useState(null)
   const [extras, setExtras] = useState([])
@@ -51,29 +52,17 @@ export default function DetalleProducto() {
     return (Number(producto.price) + precioExtras) * cantidad
   }
 
+  const { agregarAlCarrito: agregarProducto } = useCarrito()
+
   const agregarAlCarrito = async () => {
-    if (!usuario) return
+    if (!user) return
+
     setAgregando(true)
 
-    const { data: existe } = await supabase
-      .from('cart_items')
-      .select('*')
-      .eq('user_id', usuario.id)
-      .eq('product_id', producto.id)
-      .single()
-
-    if (existe) {
-      await supabase
-        .from('cart_items')
-        .update({ quantity: existe.quantity + cantidad })
-        .eq('id', existe.id)
-    } else {
-      await supabase
-        .from('cart_items')
-        .insert({ user_id: usuario.id, product_id: producto.id, quantity: cantidad })
-    }
+    await agregarProducto(producto.id, cantidad)
 
     setAgregando(false)
+
     navigate('/carrito')
   }
 

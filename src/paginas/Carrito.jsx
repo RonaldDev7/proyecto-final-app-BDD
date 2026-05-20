@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexto/AuthContexto'
+import { useCarrito } from '../contexto/CarritoContexto'
 import NavInferior from '../componentes/NavInferior'
 
 const ENVIO = 5900
@@ -9,57 +10,23 @@ const META_ENVIO_GRATIS = 50000
 
 export default function Carrito() {
   const navigate = useNavigate()
-  const { usuario } = useAuth()
-  
-  // 1. Inyectamos ítems locales de prueba con tus imágenes de la carpeta public
-  const [items, setItems] = useState([
-    {
-      id: "item_1",
-      product_id: 1,
-      quantity: 1,
-      products: {
-        id: 1,
-        name: "Hamburguesa Especial",
-        description: "Carne artesanal de la casa con queso cheddar.",
-        price: 25000,
-        image_url: "/HamburguesaEspecial.png"
-      }
-    },
-    {
-      id: "item_2",
-      product_id: 4,
-      quantity: 2,
-      products: {
-        id: 4,
-        name: "Limonada Natural Cerezada",
-        description: "Refrescante jugo de limón natural endulzado con cerezas.",
-        price: 8000,
-        image_url: "/LimonadaCerezada.png"
-      }
-    }
-  ])
-  
+  const { user } = useAuth()
+
+  // ✅ Ahora usa el contexto global en vez de estado local duplicado
+  const {
+    itemsCarrito: items,
+    actualizarCantidad,
+    eliminarDelCarrito,
+    vaciarCarrito,
+    cargarCarrito,
+  } = useCarrito()
+
   const [sugeridos, setSugeridos] = useState([])
-  
-  // Desactivamos el spinner inicial para maquetar de inmediato
-  const [cargando, setCargando] = useState(false)
   const [finalizando, setFinalizando] = useState(false)
 
   useEffect(() => {
-    cargarCarrito()
     cargarSugeridos()
   }, [])
-
-  const cargarCarrito = async () => {
-    const { data } = await supabase
-      .from('cart_items')
-      .select('*, products(id, name, description, price, image_url)')
-      .eq('user_id', usuario?.id)
-    if (data && data.length > 0) {
-      setItems(data)
-    }
-    setCargando(false)
-  }
 
   const cargarSugeridos = async () => {
     const { data } = await supabase
@@ -67,42 +34,7 @@ export default function Carrito() {
       .select('*')
       .eq('available', true)
       .limit(5)
-    if (data && data.length > 0) {
-      setSugeridos(data)
-    }
-  }
-
-  const actualizarCantidad = (itemId, nuevaCantidad) => {
-    if (nuevaCantidad < 1) {
-      eliminarItem(itemId)
-      return
-    }
-    // Modificación local instantánea para probar botones + y -
-    setItems((prev) =>
-      prev.map((i) => i.id === itemId ? { ...i, quantity: nuevaCantidad } : i)
-    )
-  }
-
-  const eliminarItem = async (itemId) => {
-    setItems((prev) => prev.filter((i) => i.id !== itemId))
-  }
-
-  const vaciarCarrito = async () => {
-    setItems([])
-  }
-
-  const agregarSugerido = (producto) => {
-    const existe = items.find((i) => i.product_id === producto.id)
-    if (existe) {
-      actualizarCantidad(existe.id, existe.quantity + 1)
-    } else {
-      setItems((prev) => [...prev, {
-        id: `item_${Date.now()}`,
-        product_id: producto.id,
-        quantity: 1,
-        products: producto
-      }])
-    }
+    if (data) setSugeridos(data)
   }
 
   const subtotal = items.reduce(
@@ -114,19 +46,42 @@ export default function Carrito() {
   const totalItems = items.reduce((acc, i) => acc + i.quantity, 0)
 
   const finalizarPedido = async () => {
+    if (!user) { alert('Debes iniciar sesión'); return }
     if (items.length === 0) return
-    setFinalizando(true)
-    navigate('/pedidos')
-    setFinalizando(false)
-  }
 
-  if (cargando) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#FAF6F1' }}>
-        <div className="w-8 h-8 rounded-full border-2 animate-spin"
-          style={{ borderColor: '#8B1A1A', borderTopColor: 'transparent' }} />
-      </div>
-    )
+    setFinalizando(true)
+
+    try {
+      const { data: orden, error: errorOrden } = await supabase
+        .from('orders')
+        .insert({ user_id: user.id, status: 'pending', total })
+        .select()
+        .single()
+
+      if (errorOrden) { alert(errorOrden.message); return }
+
+      const itemsPedido = items.map((item) => ({
+        order_id: orden.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: item.products.price,
+      }))
+
+      const { error: errorItems } = await supabase
+        .from('order_items')
+        .insert(itemsPedido)
+
+      if (errorItems) { alert(errorItems.message); return }
+
+      // ✅ Vacía en Supabase y actualiza el contexto global
+      await vaciarCarrito()
+      navigate('/pedidos')
+
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setFinalizando(false)
+    }
   }
 
   return (
@@ -167,7 +122,7 @@ export default function Carrito() {
         </div>
       ) : (
         <>
-          {/* Barra envío gratis (Sombreada con casilla flotante) */}
+          {/* Barra envío gratis */}
           <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-md border border-gray-100/50">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">🛵</span>
@@ -191,7 +146,7 @@ export default function Carrito() {
             </div>
           </div>
 
-          {/* Items del carrito (Casillas independientes con sombra) */}
+          {/* Items */}
           <div className="mx-4 mt-4 flex flex-col gap-3.5">
             {items.map((item) => (
               <div key={item.id} className="flex gap-4 bg-white rounded-2xl p-3.5 shadow-md border border-gray-100/60 transition-all hover:shadow-lg">
@@ -206,7 +161,8 @@ export default function Carrito() {
                       <p className="text-sm font-bold text-gray-800 truncate pr-2">
                         {item.products?.name}
                       </p>
-                      <button onClick={() => eliminarItem(item.id)}>
+                      {/* ✅ Llama al contexto, elimina en Supabase */}
+                      <button onClick={() => eliminarDelCarrito(item.id)}>
                         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#9CA3AF" strokeWidth="2">
                           <polyline points="3 6 5 6 21 6" />
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
@@ -216,27 +172,21 @@ export default function Carrito() {
                     </div>
                     <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.products?.description}</p>
                   </div>
-                  
-                  {/* Selector de cantidad y precio */}
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-sm font-black text-[#8B1A1A]">
                       ${(Number(item.products?.price ?? 0) * item.quantity).toLocaleString('es-CO')}
                     </span>
-                    
                     <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-2.5 py-1 border border-gray-200/50">
-                      <button 
+                      {/* ✅ Actualiza cantidad en Supabase */}
+                      <button
                         onClick={() => actualizarCantidad(item.id, item.quantity - 1)}
                         className="text-gray-500 font-bold text-sm px-1"
-                      >
-                        -
-                      </button>
+                      >-</button>
                       <span className="text-xs font-bold text-gray-800">{item.quantity}</span>
-                      <button 
+                      <button
                         onClick={() => actualizarCantidad(item.id, item.quantity + 1)}
                         className="text-gray-500 font-bold text-sm px-1"
-                      >
-                        +
-                      </button>
+                      >+</button>
                     </div>
                   </div>
                 </div>
@@ -244,7 +194,7 @@ export default function Carrito() {
             ))}
           </div>
 
-          {/* Resumen de totales (Casilla flotante con sombra) */}
+          {/* Resumen */}
           <div className="mx-4 mt-5 bg-white rounded-2xl p-4 shadow-md border border-gray-100/50 flex flex-col gap-2.5">
             <div className="flex justify-between text-xs font-medium text-gray-500">
               <span>Subtotal ({totalItems} productos)</span>
@@ -259,7 +209,6 @@ export default function Carrito() {
               <span>Total a pagar</span>
               <span className="text-[#8B1A1A]">${total.toLocaleString('es-CO')}</span>
             </div>
-            
             <button
               onClick={finalizarPedido}
               disabled={finalizando}
