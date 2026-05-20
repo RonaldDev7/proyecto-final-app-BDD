@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useCarrito } from '../contexto/CarritoContexto'
 
 const items = [
   {
@@ -25,6 +26,7 @@ const items = [
   {
     ruta: '/carrito',
     etiqueta: 'Carrito',
+    esCarrito: true,  // ✅ marcador para inyectar badge dinámico
     icono: (activo) => (
       <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={activo ? '#8B1A1A' : '#9CA3AF'} strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
@@ -32,7 +34,6 @@ const items = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M16 10a4 4 0 0 1-8 0" />
       </svg>
     ),
-    badge: 3,
   },
   {
     ruta: '/pedidos',
@@ -59,18 +60,21 @@ const items = [
 
 export default function NavInferior() {
   const { pathname } = useLocation()
+  const { cantidadCarrito } = useCarrito()  // ✅ contador real
 
   return (
     <div
       className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-t flex justify-around items-center py-2 z-50"
       style={{ borderColor: '#E0D6CE' }}
     >
-      {items.map(({ ruta, etiqueta, icono, badge }) => {
+      {items.map(({ ruta, etiqueta, icono, esCarrito }) => {
         const activo = pathname === ruta
+        const badge = esCarrito ? cantidadCarrito : 0  // ✅ badge dinámico solo en carrito
+
         return (
           <Link key={ruta} to={ruta} className="flex flex-col items-center gap-0.5 px-3 py-1 relative">
             {icono(activo)}
-            {badge && (
+            {badge > 0 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
                 style={{ backgroundColor: '#8B1A1A' }}>
                 {badge}

@@ -43,12 +43,22 @@ export default function Registro() {
 
     // Guardar datos extra en tabla users
     if (data.user) {
-      await supabase.from('users').insert({
-        id: data.user.id,
-        full_name: form.nombre,
-        email: form.correo,
-        phone: form.telefono,
-      })
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: data.user.id,
+          full_name: form.nombre,
+          email: form.correo,
+          phone: form.telefono,
+        })
+
+      console.log(insertError)
+
+      if (insertError) {
+        setError(insertError.message)
+        setCargando(false)
+        return
+      }
     }
 
     navigate('/')

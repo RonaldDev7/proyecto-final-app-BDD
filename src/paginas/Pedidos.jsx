@@ -65,31 +65,10 @@ function PasosPedido({ estado }) {
 
 export default function Pedidos() {
   const navigate = useNavigate()
-  const { usuario } = useAuth()
+  const { user } = useAuth()
   
   // 1. Inyectamos pedidos locales ficticios enlazados a tus imágenes de public
-  const [pedidos, setPedidos] = useState([
-    {
-      id: "1024",
-      status: "pending",
-      created_at: new Date().toISOString(),
-      total: 33000,
-      order_items: [
-        { products: { name: "Hamburguesa Especial", image_url: "/HamburguesaEspecial.png" } },
-        { products: { name: "Limonada Natural Cerezada", image_url: "/LimonadaCerezada.png" } }
-      ]
-    },
-    {
-      id: "0982",
-      status: "delivered",
-      created_at: new Date(Date.now() - 86400000).toISOString(), // Ayer
-      total: 42000,
-      order_items: [
-        { products: { name: "Pizza Pepperoni madurada", image_url: "/Pizza Pepperoni madurada.webp" } },
-        { products: { name: "Papas Fritas Crujientes", image_url: "/papas.webp" } }
-      ]
-    }
-  ])
+  const [pedidos, setPedidos] = useState([])
   
   const [tabActiva, setTabActiva] = useState('todos')
   
@@ -101,7 +80,7 @@ export default function Pedidos() {
       const { data } = await supabase
         .from('orders')
         .select('*, order_items(*, products(name, image_url))')
-        .eq('user_id', usuario?.id)
+        .eq('user_id', user?.id)
         .order('created_at', { ascending: false })
       if (data && data.length > 0) {
         setPedidos(data)

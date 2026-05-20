@@ -1,0 +1,32 @@
+{
+  "hash": "bfa20b0a",
+  "configHash": "4e8a003d",
+  "lockfileHash": "f14ddcf9",
+  "browserHash": "aa3a3476",
+  "optimized": {
+    "react-dom/client": {
+      "src": "../../node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "c9d61258",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../node_modules/.pnpm/react@19.2.6/node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "8a548305",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/.pnpm/react@19.2.6/node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "e5db7f59",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "react-DPJ86puS": {
+      "file": "react-DPJ86puS.js",
+      "isDynamicEntry": false
+    }
+  }
+}
